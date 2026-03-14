@@ -1,0 +1,54 @@
+/*
+  Custom font-face for distinctive typography. Using 'Migra' (serif, high-contrast, editorial) and 'JetBrains Mono' (monospace, for UI/labels). Download font files and place in /src/styles/fonts/ for production use.
+*/
+
+@font-face {
+  font-family: 'Migra';
+  src: url('./fonts/Migra-Extrabold.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Migra';
+  src: url('./fonts/Migra-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Typography */
+  --font-display: 'Migra', serif;
+  --font-ui: 'JetBrains Mono', monospace;
+  --font-size-base: 17px;
+  --font-size-lg: 2.6rem;
+  --font-size-md: 1.25rem;
+  --font-size-sm: 0.95rem;
+
+  /* Color: deep, editorial, unexpected */
+  --color-bg: #181c24;
+  --color-bg-alt: #23283a;
+  --color-surface: #f7f3e8;
+  --color-primary: #e4572e;
+  --color-accent: #2e9eeb;
+  --color-contrast: #f0c808;
+  --color-muted: #b0aeb8;
+  --color-text: #181c24;
+  --color-text-invert: #f7f3e8;
+  --color-border: #2e9eeb33;
+
+  /* Gradients & patterns */
+  --gradient-main: linear-gradient(120deg, #23283a 0%, #181c24 100%);
+  --pattern-overlay: repeating-linear-gradient(135deg, #2e9eeb11 0 2px, transparent 2px 20px);
+
+  /* Motion */
+  --motion-orchestrated: cubic-bezier(0.77,0,0.175,1) 1.2s;
+}
