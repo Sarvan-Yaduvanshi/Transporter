@@ -1,3 +1,8 @@
+@import './brand.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Orchestrated animation for PermitView main card */
 .permit-orchestrated {
   opacity: 0;
@@ -45,11 +50,6 @@
 .animate-slide-in {
   animation: slideInFromRight 0.3s ease-out forwards;
 }
-
-@import './brand.css';
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 
 * {
   box-sizing: border-box;
