@@ -1,47 +1,54 @@
-const jwt = require('jsonwebtoken');
+const admin = require('../config/firebaseAdmin');
 const { User } = require('../models');
-
-const JWT_SECRET = process.env.JWT_SECRET || 'transporter-ops-secret-dev';
-
-/**
- * Generate a signed JWT for a given user id.
- */
-const signToken = (userId) =>
-    jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
+const asyncHandler = require('./asyncHandler');
 
 /**
- * Express middleware — verifies the Bearer token and attaches `req.user`.
+ * Protect Middleware — Verifies Firebase ID Token
  */
-const protect = async (req, res, next) => {
+exports.protect = asyncHandler(async (req, res, next) => {
     let token;
 
-    if (
-        req.headers.authorization &&
-        req.headers.authorization.startsWith('Bearer')
-    ) {
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         token = req.headers.authorization.split(' ')[1];
     }
 
     if (!token) {
-        return res
-            .status(401)
-            .json({ success: false, message: 'Not authorised — no token' });
+        return res.status(401).json({ success: false, message: 'Not authorized — No token provided' });
     }
 
+    let decodedToken;
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = await User.findById(decoded.id).select('-password');
-        if (!req.user) {
-            return res
-                .status(401)
-                .json({ success: false, message: 'User no longer exists' });
-        }
-        next();
-    } catch (err) {
-        return res
-            .status(401)
-            .json({ success: false, message: 'Token invalid or expired' });
+        // 1. Verify the token with Firebase
+        decodedToken = await admin.auth().verifyIdToken(token);
+    } catch (error) {
+        console.error('Firebase Auth Error:', error);
+        return res.status(401).json({ success: false, message: 'Token is invalid or expired' });
     }
-};
 
-module.exports = { signToken, protect, JWT_SECRET };
+    // 2. Find the user in MongoDB using Firebase UID first, then email/phone
+    let user = null;
+    if (decodedToken.uid) {
+        user = await User.findOne({ firebaseUid: decodedToken.uid }).select('-password');
+    }
+
+    if (!user && decodedToken.email) {
+        user = await User.findOne({ email: decodedToken.email }).select('-password');
+    }
+
+    if (!user && decodedToken.phone_number) {
+        const cleanedPhone = decodedToken.phone_number.replace(/[\s\-()]/g, '');
+        user = await User.findOne({ phone: cleanedPhone }).select('-password');
+    }
+
+    if (!user) {
+        return res.status(401).json({ success: false, message: 'User does not exist in local database' });
+    }
+
+    if (!user.firebaseUid && decodedToken.uid) {
+        user.firebaseUid = decodedToken.uid;
+        await user.save();
+    }
+
+    req.user = user;
+    next();
+});

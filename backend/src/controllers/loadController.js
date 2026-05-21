@@ -25,16 +25,64 @@ exports.getOne = asyncHandler(async (req, res) => {
 // @desc   Create load
 // @route  POST /api/loads
 exports.create = asyncHandler(async (req, res) => {
-  const load = await Load.create(req.body);
+  const loadId = (req.body.loadId || '').trim();
+  const permitNumber = (req.body.permitNumber || '').trim();
+  const truckNumber = (req.body.truckNumber || '').trim();
+
+  if (!loadId || !permitNumber || !truckNumber) {
+    const err = new Error('Load ID, permit number, and truck number are required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const exists = await Load.findOne({ loadId }).lean();
+  if (exists) {
+    const err = new Error('Load ID already exists');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const load = await Load.create({
+    loadId,
+    permitNumber,
+    truckNumber,
+    currentStage: req.body.currentStage,
+    hasFlag: Boolean(req.body.hasFlag)
+  });
   res.status(201).json({ success: true, data: load });
 });
 
 // @desc   Update load stage / flag
 // @route  PUT /api/loads/:loadId
 exports.update = asyncHandler(async (req, res) => {
+  const updates = {
+    permitNumber: req.body.permitNumber,
+    truckNumber: req.body.truckNumber,
+    currentStage: req.body.currentStage,
+    hasFlag: req.body.hasFlag
+  };
+
+  if (updates.permitNumber !== undefined) {
+    updates.permitNumber = updates.permitNumber.trim();
+    if (!updates.permitNumber) {
+      const err = new Error('Permit number cannot be empty');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  if (updates.truckNumber !== undefined) {
+    updates.truckNumber = updates.truckNumber.trim();
+    if (!updates.truckNumber) {
+      const err = new Error('Truck number cannot be empty');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+
   const load = await Load.findOneAndUpdate(
     { loadId: req.params.loadId },
-    req.body,
+    updates,
     { new: true, runValidators: true }
   );
   if (!load) {

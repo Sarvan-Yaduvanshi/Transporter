@@ -1,102 +1,132 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authMe, authLogin, authSignup, authGoogle, authFacebook, authSendOtp, authVerifyOtp, authUpdateProfile } from '@/services/api';
-
-
-
-
-
-
-
-
-
-
-
-
-
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile as updateFirebaseProfile
+} from 'firebase/auth';
+import { auth, googleProvider } from '../config/firebase';
+import { authGoogle, authMe, authUpdateProfile } from '../services/api';
 
 const AuthContext = createContext(null);
 
-function persist(data) {
-  localStorage.setItem('token', data.token);
-  localStorage.setItem('user', JSON.stringify(data.user));
-}
+const syncFirebaseUser = async (firebaseUser) => {
+  const idToken = await firebaseUser.getIdToken();
+  const response = await authGoogle(idToken);
+  const nextUser = response?.data?.user;
+  if (!response?.success || !nextUser) {
+    throw new Error(response?.message || 'Failed to sync user');
+  }
+  return nextUser;
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  /* On mount — check for a stored token */
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setLoading(false);
-      return;
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const response = await authMe();
+        if (response?.success && response?.data) {
+          setUser(response.data);
+        } else {
+          throw new Error('Failed to load user profile');
+        }
+      } catch (error) {
+        try {
+          const synced = await syncFirebaseUser(firebaseUser);
+          setUser(synced);
+        } catch (syncError) {
+          console.error('Failed to sync Firebase user', syncError);
+          setUser(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const login = async (email, password) => {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    const synced = await syncFirebaseUser(result.user);
+    setUser(synced);
+    return synced;
+  };
+
+  const signup = async (name, email, password, _phone) => {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    if (name) {
+      await updateFirebaseProfile(result.user, { displayName: name });
+      await result.user.getIdToken(true);
     }
-    authMe().
-    then((u) => setUser(u)).
-    catch(() => {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-    }).
-    finally(() => setLoading(false));
-  }, []);
+    const synced = await syncFirebaseUser(result.user);
+    setUser(synced);
+    return synced;
+  };
 
-  const login = useCallback(async (email, password) => {
-    const data = await authLogin({ email, password });
-    persist(data);
-    setUser(data.user);
-  }, []);
+  const loginWithGoogle = async () => {
+    const result = await signInWithPopup(auth, googleProvider);
+    const synced = await syncFirebaseUser(result.user);
+    setUser(synced);
+    return synced;
+  };
 
-  const signup = useCallback(async (name, email, password, phone) => {
-    const data = await authSignup({ name, email, password, phone });
-    persist(data);
-    setUser(data.user);
-  }, []);
+  const loginWithFacebook = async () => {
+    throw new Error('Facebook login is not configured. Use Google sign-in.');
+  };
 
-  const loginWithGoogle = useCallback(async (payload) => {
-    const data = await authGoogle(payload);
-    persist(data);
-    setUser(data.user);
-  }, []);
+  const sendOtp = async () => {
+    throw new Error('Phone OTP login is not configured. Use Google sign-in.');
+  };
 
-  const loginWithFacebook = useCallback(async (payload) => {
-    const data = await authFacebook(payload);
-    persist(data);
-    setUser(data.user);
-  }, []);
+  const verifyOtp = async () => {
+    throw new Error('Phone OTP login is not configured. Use Google sign-in.');
+  };
 
-  const sendOtp = useCallback(async (phone) => {
-    const resp = await authSendOtp(phone);
-    return resp.otp; // available in dev mode for demo
-  }, []);
+  const updateProfile = async (updates) => {
+    const response = await authUpdateProfile(updates);
+    if (!response?.success || !response?.data) {
+      throw new Error(response?.message || 'Failed to update profile');
+    }
+    setUser(response.data);
+    return response.data;
+  };
 
-  const verifyOtp = useCallback(async (phone, otp, name) => {
-    const data = await authVerifyOtp({ phone, otp, name });
-    persist(data);
-    setUser(data.user);
-  }, []);
-
-  const updateProfile = useCallback(async (data) => {
-    const updated = await authUpdateProfile(data);
-    setUser(updated);
-    localStorage.setItem('user', JSON.stringify(updated));
-  }, []);
-
-  const logout = useCallback(() => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const logout = async () => {
+    await signOut(auth);
     setUser(null);
-  }, []);
+  };
+
+  const value = useMemo(() => ({
+    user,
+    loading,
+    login,
+    signup,
+    logout,
+    loginWithGoogle,
+    loginWithFacebook,
+    sendOtp,
+    verifyOtp,
+    updateProfile
+  }), [user, loading]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, loginWithGoogle, loginWithFacebook, sendOtp, verifyOtp, updateProfile, logout }}>
-            {children}
-        </AuthContext.Provider>);
-
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within <AuthProvider>');
-  return ctx;
-}
+export const useAuth = () => useContext(AuthContext);

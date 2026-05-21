@@ -1,26 +1,41 @@
-const BASE = '/api';
+import { auth } from '../config/firebase';
 
-function authHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-  const token = localStorage.getItem('token');
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return headers;
-}
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
-async function request(url, opts) {
-  const res = await fetch(`${BASE}${url}`, {
-    headers: authHeaders(),
-    ...opts
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `API ${res.status}`);
+const getAuthToken = async () => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) return null;
+  return currentUser.getIdToken();
+};
+
+const request = async (path, options = {}) => {
+  const token = await getAuthToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
-  const json = await res.json();
-  return json.data;
-}
 
-/* ─── Types ─────────────────────────────────────── */
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const contentType = response.headers.get('content-type') || '';
+  const payload = contentType.includes('application/json') ? await response.json() : null;
+
+  if (!response.ok) {
+    const message = payload?.message || payload?.error || 'Request failed';
+    throw new Error(message);
+  }
+
+  return payload;
+};
+
+export const authGoogle = async (firebaseToken) =>
+  request('/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ token: firebaseToken })
+  });
 
 
 
@@ -310,7 +325,7 @@ request('/auth/signup', { method: 'POST', body: JSON.stringify(data) });
 export const authLogin = (data) =>
 request('/auth/login', { method: 'POST', body: JSON.stringify(data) });
 
-export const authGoogle = (data) =>
+export const authGoogleOAuth = (data) =>
 request('/auth/google', { method: 'POST', body: JSON.stringify(data) });
 
 export const authFacebook = (data) =>

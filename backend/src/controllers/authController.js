@@ -1,14 +1,12 @@
 const asyncHandler = require('../middleware/asyncHandler');
 const { User, Otp } = require('../models');
-const { signToken } = require('../middleware/auth');
+const admin = require('../config/firebaseAdmin'); // make sure this is initialised
 
-/* ── helper: build user response with token ─────── */
+/* ── helper: build user response ───────────────── */
 const userResponse = (user, statusCode, res) => {
-    const token = signToken(user._id);
     res.status(statusCode).json({
         success: true,
         data: {
-            token,
             user: {
                 _id: user._id,
                 name: user.name,
@@ -25,13 +23,14 @@ const userResponse = (user, statusCode, res) => {
     });
 };
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const PASSWORD_RE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
+const PHONE_RE = /^\+?[1-9]\d{6,14}$/;
+
 // ────────────────────────────────────────────────────
 // @desc   Register a new user (default role = Driver)
 // @route  POST /api/auth/signup
 // ────────────────────────────────────────────────────
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const PASSWORD_RE = /^(?=.*[A-Z])(?=.*\d).{6,}$/;
-
 exports.signup = asyncHandler(async (req, res) => {
     const { name, email, password, phone } = req.body;
 
@@ -66,10 +65,9 @@ exports.signup = asyncHandler(async (req, res) => {
         throw new Error('An account with this email already exists');
     }
 
-    // Validate phone if provided
     if (phone) {
         const cleanedPhone = phone.replace(/[\s\-()]/g, '');
-        if (!/^\+?[1-9]\d{6,14}$/.test(cleanedPhone)) {
+        if (!PHONE_RE.test(cleanedPhone)) {
             res.status(400);
             throw new Error('Please provide a valid phone number');
         }
@@ -85,7 +83,7 @@ exports.signup = asyncHandler(async (req, res) => {
         email,
         password,
         phone: phone ? phone.replace(/[\s\-()]/g, '') : undefined,
-        role: 'Driver', // default role
+        role: 'Driver',
         provider: 'local',
     });
 
@@ -125,36 +123,62 @@ exports.login = asyncHandler(async (req, res) => {
 });
 
 // ────────────────────────────────────────────────────
-// @desc   Google OAuth — create or login
+// @desc   Firebase ID token — create or login user
 // @route  POST /api/auth/google
-// @body   { idToken, name, email, avatar }
+// @body   { token }   ← Firebase ID token from signInWithPopup
 // ────────────────────────────────────────────────────
 exports.googleAuth = asyncHandler(async (req, res) => {
-    const { googleId, name, email, avatar } = req.body;
+    const { token } = req.body;
+
+    if (!token) {
+        res.status(400);
+        throw new Error('Firebase ID token is required');
+    }
+
+    // Verify the token with Firebase Admin SDK
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    const {
+        uid,
+        name,
+        email,
+        picture,
+        firebase: firebaseInfo = {}
+    } = decodedToken;
 
     if (!email) {
         res.status(400);
-        throw new Error('Google auth requires an email');
+        throw new Error('Firebase account must have an email address');
     }
 
-    let user = await User.findOne({ email });
+    // Find existing user or create a new one
+    let user = await User.findOne({ firebaseUid: uid });
+
+    if (!user) {
+        user = await User.findOne({ email });
+    }
+
+    const providerMap = {
+        'google.com': 'google',
+        'facebook.com': 'facebook',
+        phone: 'phone',
+        password: 'local'
+    };
+    const provider = providerMap[firebaseInfo.sign_in_provider] || 'local';
 
     if (user) {
-        // Link Google ID if not already linked
-        if (!user.googleId && googleId) {
-            user.googleId = googleId;
-            user.provider = 'google';
-            if (avatar && !user.avatar) user.avatar = avatar;
-            await user.save();
-        }
+        // Update provider and avatar if the account was originally local
+        if (user.provider !== provider) user.provider = provider;
+        if (picture && !user.avatar) user.avatar = picture;
+        if (!user.firebaseUid) user.firebaseUid = uid;
+        await user.save();
     } else {
         user = await User.create({
             name: name || email.split('@')[0],
             email,
-            googleId,
-            avatar: avatar || '',
+            avatar: picture || '',
             role: 'Driver',
-            provider: 'google',
+            provider,
+            firebaseUid: uid,
         });
     }
 
@@ -226,13 +250,8 @@ exports.updateProfile = asyncHandler(async (req, res) => {
         user.nickname = nickname.trim();
     }
 
-    if (avatar !== undefined) {
-        user.avatar = avatar;
-    }
-
-    if (banner !== undefined) {
-        user.banner = banner;
-    }
+    if (avatar !== undefined) user.avatar = avatar;
+    if (banner !== undefined) user.banner = banner;
 
     await user.save();
 
@@ -258,8 +277,6 @@ exports.updateProfile = asyncHandler(async (req, res) => {
 // @route  POST /api/auth/send-otp
 // @body   { phone }
 // ────────────────────────────────────────────────────
-const PHONE_RE = /^\+?[1-9]\d{6,14}$/;
-
 exports.sendOtp = asyncHandler(async (req, res) => {
     const { phone } = req.body;
 
@@ -274,23 +291,19 @@ exports.sendOtp = asyncHandler(async (req, res) => {
         throw new Error('Please provide a valid phone number');
     }
 
-    // Remove any previous OTPs for this phone
     await Otp.deleteMany({ phone: cleaned });
 
-    // Generate a 6-digit OTP
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
     await Otp.create({ phone: cleaned, code, expiresAt });
 
-    // ── In production, send SMS via Twilio / MSG91 / etc. ──
-    // For now, log to console so you can test locally.
+    // ── In production replace this with Twilio / MSG91 / etc. ──
     console.log(`\n📱  OTP for ${cleaned}: ${code}\n`);
 
     res.status(200).json({
         success: true,
         message: 'OTP sent successfully',
-        // Include OTP in response ONLY for development / demo
         ...(process.env.NODE_ENV !== 'production' && { otp: code }),
     });
 });
@@ -322,17 +335,15 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
         throw new Error('Invalid or expired OTP');
     }
 
-    // Mark OTP as used
     record.verified = true;
     await record.save();
 
-    // Find or create user by phone
     let user = await User.findOne({ phone: cleaned });
 
     if (!user) {
         user = await User.create({
             name: name || `User ${cleaned.slice(-4)}`,
-            email: `${cleaned}@phone.local`, // placeholder email
+            email: `${cleaned}@phone.local`,
             phone: cleaned,
             role: 'Driver',
             provider: 'phone',

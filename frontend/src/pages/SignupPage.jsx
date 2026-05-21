@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Truck, Eye, EyeOff, AlertCircle, Check, ChevronDown, Search } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { COUNTRY_CODES } from '@/data/countryCodes';
-import { triggerFacebookOAuth, triggerGoogleOAuth } from '../services/socialAuth';
+// Facebook signup uses Firebase in useAuth; legacy OAuth removed
 
 
 
@@ -90,8 +90,7 @@ export function SignupPage({ onSwitchToLogin }) {
     setError('');
     setLoading(true);
     try {
-      const googleUser = await triggerGoogleOAuth();
-      await loginWithGoogle(googleUser);
+      await loginWithGoogle();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google signup failed');
     } finally {
@@ -103,8 +102,7 @@ export function SignupPage({ onSwitchToLogin }) {
     setError('');
     setLoading(true);
     try {
-      const fbUser = await triggerFacebookOAuth();
-      await loginWithFacebook(fbUser);
+      await loginWithFacebook();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Facebook signup failed');
     } finally {

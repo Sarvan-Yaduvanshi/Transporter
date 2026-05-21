@@ -48,7 +48,13 @@ const userSchema = new mongoose.Schema(
         /* ── Phone login ────────────────────────────── */
         phone: {
             type: String,
-            default: null,
+            unique: true,
+            sparse: true,
+            trim: true,
+        },
+        /* ── Firebase UID ───────────────────────────── */
+        firebaseUid: {
+            type: String,
             unique: true,
             sparse: true,
             trim: true,
@@ -67,6 +73,9 @@ const userSchema = new mongoose.Schema(
 
 /* ── Hash password before save ─────────────────── */
 userSchema.pre('save', async function (next) {
+    if (this.phone === null || this.phone === '') {
+        this.phone = undefined;
+    }
     if (!this.isModified('password') || !this.password) return next();
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);

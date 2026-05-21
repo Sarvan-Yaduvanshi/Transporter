@@ -32,16 +32,47 @@ exports.getOne = asyncHandler(async (req, res) => {
 // @desc   Create truck
 // @route  POST /api/trucks
 exports.create = asyncHandler(async (req, res) => {
-  const truck = await Truck.create(req.body);
+  const truckNumber = (req.body.truckNumber || '').trim();
+  if (!truckNumber) {
+    const err = new Error('Truck number is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const exists = await Truck.findOne({ truckNumber }).lean();
+  if (exists) {
+    const err = new Error('Truck number already exists');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const truck = await Truck.create({
+    truckNumber,
+    owner: (req.body.owner || '').trim(),
+    driver: (req.body.driver || '').trim(),
+    status: req.body.status,
+    availabilityWindow: (req.body.availabilityWindow || '').trim()
+  });
   res.status(201).json({ success: true, data: truck });
 });
 
 // @desc   Update truck
 // @route  PUT /api/trucks/:truckNumber
 exports.update = asyncHandler(async (req, res) => {
+  const updates = {
+    owner: req.body.owner,
+    driver: req.body.driver,
+    status: req.body.status,
+    availabilityWindow: req.body.availabilityWindow
+  };
+  if (updates.owner !== undefined) updates.owner = updates.owner.trim();
+  if (updates.driver !== undefined) updates.driver = updates.driver.trim();
+  if (updates.availabilityWindow !== undefined) updates.availabilityWindow = updates.availabilityWindow.trim();
+  Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+
   const truck = await Truck.findOneAndUpdate(
     { truckNumber: req.params.truckNumber },
-    req.body,
+    updates,
     { new: true, runValidators: true }
   );
   if (!truck) {
