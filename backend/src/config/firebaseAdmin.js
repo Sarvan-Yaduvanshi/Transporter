@@ -1,6 +1,8 @@
 const admin = require('firebase-admin');
 
 let serviceAccount;
+let initError = null;
+let initSuccess = false;
 
 // Check if Firebase Service Account credentials are provided as an environment variable (standard for Vercel/Production)
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -13,15 +15,17 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     serviceAccount = JSON.parse(decoded);
   } catch (err) {
     console.error('Error parsing FIREBASE_SERVICE_ACCOUNT environment variable:', err.message);
+    initError = `JSON parse failed: ${err.message}`;
   }
 }
 
 // Fallback to local serviceAccountKey.json file (local development)
-if (!serviceAccount) {
+if (!serviceAccount && !initError) {
   try {
     serviceAccount = require('./serviceAccountKey.json');
   } catch (err) {
     console.warn('Firebase serviceAccountKey.json not found, and FIREBASE_SERVICE_ACCOUNT environment variable is not set. Social logins will fail.');
+    initError = 'Credentials not found (local file missing and environment variable empty)';
   }
 }
 
@@ -52,12 +56,20 @@ if (serviceAccount) {
       credential: admin.credential.cert(serviceAccount)
     });
     console.log('[Firebase Init] Firebase Admin SDK successfully initialized.');
+    initSuccess = true;
   } catch (err) {
     console.error('[Firebase Init] Failed to initialize Firebase Admin:', err.message);
-    throw err; // rethrow so Vercel logs show the failure clearly
+    initError = err.message;
   }
-} else {
-  console.warn('Firebase Admin SDK was not initialized due to missing credentials.');
+} else if (!initError) {
+  initError = 'No Firebase service account credentials provided';
 }
+
+// Export initialization status along with the admin instance
+admin.$initStatus = {
+  success: initSuccess,
+  error: initError,
+  hasEnv: !!process.env.FIREBASE_SERVICE_ACCOUNT
+};
 
 module.exports = admin;

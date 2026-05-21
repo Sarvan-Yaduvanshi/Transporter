@@ -17,7 +17,18 @@ if (process.env.NODE_ENV !== 'production') {
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  const firebaseAdmin = require('./config/firebaseAdmin');
+  res.json({ 
+    status: 'ok', 
+    uptime: process.uptime(),
+    firebase: firebaseAdmin.$initStatus,
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL: process.env.VERCEL || 'false',
+      HAS_MONGO_URI: !!process.env.MONGO_URI,
+      HAS_FIREBASE_ENV: !!process.env.FIREBASE_SERVICE_ACCOUNT
+    }
+  });
 });
 
 // ── API routes ─────────────────────────────────────────────
