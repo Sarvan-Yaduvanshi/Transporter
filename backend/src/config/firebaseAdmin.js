@@ -3,6 +3,7 @@ const admin = require('firebase-admin');
 let serviceAccount;
 let initError = null;
 let initSuccess = false;
+let keyDiagnostics = null;
 
 // Check if Firebase Service Account credentials are provided as an environment variable (standard for Vercel/Production)
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -30,25 +31,57 @@ if (!serviceAccount && !initError) {
 }
 
 if (serviceAccount) {
-  // Replace escaped newline characters in private_key if present
   if (serviceAccount.private_key && typeof serviceAccount.private_key === 'string') {
-    let key = serviceAccount.private_key.trim();
+    let key = serviceAccount.private_key;
     
-    // 1. If Vercel wrapped the key in quotes, strip them
-    if (key.startsWith('"') && key.endsWith('"')) {
-      key = key.slice(1, -1);
+    // Log diagnostics before any sanitization
+    const preLength = key.length;
+    const preHasBegin = key.includes('-----BEGIN PRIVATE KEY-----');
+    const preHasEnd = key.includes('-----END PRIVATE KEY-----');
+    const preBackslashN = (key.match(/\\n/g) || []).length;
+    const preRealN = (key.match(/\n/g) || []).length;
+    
+    // Sanitization steps
+    let cleanedKey = key.trim();
+    if (cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) {
+      cleanedKey = cleanedKey.slice(1, -1);
     }
+    cleanedKey = cleanedKey.replace(/\\n/g, '\n');
+    cleanedKey = cleanedKey.replace(/\\u000a/g, '\n');
     
-    // 2. Replace all forms of escaped newlines (e.g. \\n, \n, or raw newline placeholders) with actual newlines
-    key = key.replace(/\\n/g, '\n');
-    key = key.replace(/\\u000a/g, '\n');
+    const postLength = cleanedKey.length;
+    const postHasBegin = cleanedKey.includes('-----BEGIN PRIVATE KEY-----');
+    const postHasEnd = cleanedKey.includes('-----END PRIVATE KEY-----');
+    const postRealN = (cleanedKey.match(/\n/g) || []).length;
     
-    // 3. Log a safe format check in Vercel logs to make it easy to debug
-    const hasBegin = key.includes('-----BEGIN PRIVATE KEY-----');
-    const hasEnd = key.includes('-----END PRIVATE KEY-----');
-    console.log(`[Firebase Init] Key check: Length=${key.length}, hasBegin=${hasBegin}, hasEnd=${hasEnd}`);
+    // Obfuscate key to inspect exact structure safely:
+    // Keep exact newlines, spaces, dashes, but mask all alphanumeric characters with 'x' or '0'
+    const obfuscated = cleanedKey
+      .replace(/[a-zA-Z]/g, 'x')
+      .replace(/[0-9]/g, '0');
     
-    serviceAccount.private_key = key;
+    keyDiagnostics = {
+      pre: {
+        length: preLength,
+        hasBegin: preHasBegin,
+        hasEnd: preHasEnd,
+        backslashNCount: preBackslashN,
+        realNewlineCount: preRealN
+      },
+      post: {
+        length: postLength,
+        hasBegin: postHasBegin,
+        hasEnd: postHasEnd,
+        realNewlineCount: postRealN
+      },
+      obfuscatedStructure: obfuscated
+    };
+    
+    serviceAccount.private_key = cleanedKey;
+  } else {
+    keyDiagnostics = {
+      error: 'private_key property is missing or not a string'
+    };
   }
   
   try {
@@ -69,7 +102,8 @@ if (serviceAccount) {
 admin.$initStatus = {
   success: initSuccess,
   error: initError,
-  hasEnv: !!process.env.FIREBASE_SERVICE_ACCOUNT
+  hasEnv: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+  keyDiagnostics: keyDiagnostics
 };
 
 module.exports = admin;
