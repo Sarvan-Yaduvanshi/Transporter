@@ -134,15 +134,20 @@ export function LoginPage({ onSwitchToSignup }) {
   const handleGoogle = () => {
     setError('');
     setLoading(true);
-    // Trigger loginWithGoogle instantly and synchronously to bypass browser popup blocker
-    loginWithGoogle().catch((err) => {
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('Login cancelled. Please try again.');
-      } else {
-        setError(err.message || 'Google login failed');
-      }
-      setLoading(false);
-    });
+    loginWithGoogle()
+      .then(() => {
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err.code === 'auth/popup-closed-by-user') {
+          setError('Login cancelled. Please try again.');
+        } else if (err.code === 'auth/popup-blocked') {
+          setError('Popup blocked! Click the 🔒 icon in your browser address bar → Allow pop-ups for this site → then try again.');
+        } else {
+          setError(err.message || 'Google login failed');
+        }
+        setLoading(false);
+      });
   };
 
   /* ── Facebook login ─────────────────── */

@@ -89,11 +89,18 @@ export function SignupPage({ onSwitchToLogin }) {
   const handleGoogle = () => {
     setError('');
     setLoading(true);
-    // Trigger loginWithGoogle instantly and synchronously to bypass browser popup blocker
-    loginWithGoogle().catch((err) => {
-      setError(err instanceof Error ? err.message : 'Google signup failed');
-      setLoading(false);
-    });
+    loginWithGoogle()
+      .then(() => {
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err.code === 'auth/popup-blocked') {
+          setError('Popup blocked! Click the 🔒 icon in your browser address bar → Allow pop-ups for this site → then try again.');
+        } else {
+          setError(err instanceof Error ? err.message : 'Google signup failed');
+        }
+        setLoading(false);
+      });
   };
 
   const handleFacebook = async () => {

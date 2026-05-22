@@ -1,10 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
-  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithRedirect,
+  signInWithPopup,
   signOut,
   updateProfile as updateFirebaseProfile
 } from 'firebase/auth';
@@ -26,77 +25,37 @@ const syncFirebaseUser = async (firebaseUser) => {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const redirectHandled = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const init = async () => {
-      // Step 1: Check if we're returning from a Google redirect
-      try {
-        const result = await getRedirectResult(auth);
-        if (result?.user && !cancelled) {
-          redirectHandled.current = true;
-          const synced = await syncFirebaseUser(result.user);
-          if (!cancelled) {
-            setUser(synced);
-            setLoading(false);
-            return; // Done — don't need onAuthStateChanged to run
-          }
-        }
-      } catch (err) {
-        console.error('Google redirect error:', err);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        setLoading(false);
+        return;
       }
 
-      // Step 2: Listen for auth state changes (normal page load / email login)
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        if (cancelled) return;
-
-        if (!firebaseUser) {
-          setUser(null);
-          setLoading(false);
-          return;
+      setLoading(true);
+      try {
+        const response = await authMe();
+        if (response?.success && response?.data) {
+          setUser(response.data);
+        } else {
+          throw new Error('Failed to load user profile');
         }
-
-        // If redirect already handled this user, skip
-        if (redirectHandled.current) {
-          redirectHandled.current = false;
-          return;
-        }
-
-        setLoading(true);
+      } catch (error) {
         try {
-          const response = await authMe();
-          if (!cancelled && response?.success && response?.data) {
-            setUser(response.data);
-          } else {
-            throw new Error('Failed to load user profile');
-          }
-        } catch (error) {
-          try {
-            const synced = await syncFirebaseUser(firebaseUser);
-            if (!cancelled) setUser(synced);
-          } catch (syncError) {
-            console.error('Failed to sync Firebase user', syncError);
-            if (!cancelled) setUser(null);
-          }
-        } finally {
-          if (!cancelled) setLoading(false);
+          const synced = await syncFirebaseUser(firebaseUser);
+          setUser(synced);
+        } catch (syncError) {
+          console.error('Failed to sync Firebase user', syncError);
+          setUser(null);
         }
-      });
-
-      return unsubscribe;
-    };
-
-    let unsubscribe;
-    init().then((unsub) => {
-      unsubscribe = unsub;
+      } finally {
+        setLoading(false);
+      }
     });
 
-    return () => {
-      cancelled = true;
-      if (unsubscribe) unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   const login = async (email, password) => {
@@ -117,9 +76,12 @@ export function AuthProvider({ children }) {
     return synced;
   };
 
-  const loginWithGoogle = () => {
-    // Use redirect instead of popup to avoid browser popup blockers
-    signInWithRedirect(auth, googleProvider);
+  const loginWithGoogle = async () => {
+    // signInWithPopup — the result is handled by onAuthStateChanged above
+    const result = await signInWithPopup(auth, googleProvider);
+    const synced = await syncFirebaseUser(result.user);
+    setUser(synced);
+    return synced;
   };
 
   const loginWithFacebook = async () => {
