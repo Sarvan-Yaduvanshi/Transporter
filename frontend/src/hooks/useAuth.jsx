@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile as updateFirebaseProfile
 } from 'firebase/auth';
@@ -25,6 +26,20 @@ const syncFirebaseUser = async (firebaseUser) => {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Handle Google redirect result on page load
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user) {
+          const synced = await syncFirebaseUser(result.user);
+          setUser(synced);
+        }
+      })
+      .catch((err) => {
+        console.error('Google redirect error:', err);
+      });
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -76,11 +91,9 @@ export function AuthProvider({ children }) {
     return synced;
   };
 
-  const loginWithGoogle = async () => {
-    const result = await signInWithPopup(auth, googleProvider);
-    const synced = await syncFirebaseUser(result.user);
-    setUser(synced);
-    return synced;
+  const loginWithGoogle = () => {
+    // Use redirect instead of popup to avoid browser popup blockers
+    signInWithRedirect(auth, googleProvider);
   };
 
   const loginWithFacebook = async () => {
