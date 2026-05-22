@@ -86,16 +86,14 @@ export function SignupPage({ onSwitchToLogin }) {
     }
   };
 
-  const handleGoogle = async () => {
+  const handleGoogle = () => {
     setError('');
     setLoading(true);
-    try {
-      await loginWithGoogle();
-    } catch (err) {
+    // Trigger loginWithGoogle instantly and synchronously to bypass browser popup blocker
+    loginWithGoogle().catch((err) => {
       setError(err instanceof Error ? err.message : 'Google signup failed');
-    } finally {
       setLoading(false);
-    }
+    });
   };
 
   const handleFacebook = async () => {

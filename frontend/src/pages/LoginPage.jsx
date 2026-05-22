@@ -131,22 +131,18 @@ export function LoginPage({ onSwitchToSignup }) {
   };
 
   /* ── Google Login (Firebase popup) ──── */
-  const handleGoogle = async () => {
+  const handleGoogle = () => {
     setError('');
     setLoading(true);
-    try {
-      // loginWithGoogle() now triggers signInWithPopup internally via useAuth
-      await loginWithGoogle();
-      // Navigation is handled automatically by AuthProvider on user state change
-    } catch (err) {
+    // Trigger loginWithGoogle instantly and synchronously to bypass browser popup blocker
+    loginWithGoogle().catch((err) => {
       if (err.code === 'auth/popup-closed-by-user') {
         setError('Login cancelled. Please try again.');
       } else {
         setError(err.message || 'Google login failed');
       }
-    } finally {
       setLoading(false);
-    }
+    });
   };
 
   /* ── Facebook login ─────────────────── */
